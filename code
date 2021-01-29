@@ -1,0 +1,40 @@
+"""
+Example of custom metric script.
+The custom metric script must contain the definition of custom_metric_function and a main function
+that reads the two csv files with pandas and evaluate the custom metric.
+"""
+import ast
+
+from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.metrics import f1_score
+
+def read_submission_file(output_df, label_encoder):
+    output_df['color_tags'] = output_df['color_tags'].apply(lambda x: ast.literal_eval(x))
+    binarized_labels = label_encoder.transform(output_df['color_tags'])
+    return binarized_labels
+
+
+def read_ground_truth_file(data_y):
+    data_y['color_tags'] = data_y['color_tags'].apply(lambda x: ast.literal_eval(x))
+    mlb = MultiLabelBinarizer()
+    binarized_labels = mlb.fit_transform(data_y['color_tags'])
+    
+    return binarized_labels, mlb
+
+
+def custom_metric_function(y_true, y_pred):
+    y_true, label_encoder = read_ground_truth_file(y_true)
+    y_pred = read_submission_file(y_pred, label_encoder)
+    score = f1_score(y_true, y_pred, average="weighted")
+    return score
+
+
+# The following lines show how the csv files are read
+if __name__ == '__main__':
+    import pandas as pd
+    CSV_FILE_Y_TRUE = '--------.csv'  # path of the y_true csv file
+    CSV_FILE_Y_PRED = '--------.csv'  # path of the y_pred csv file
+    df_y_true = pd.read_csv(CSV_FILE_Y_TRUE, index_col=0, sep=',')
+    df_y_pred = pd.read_csv(CSV_FILE_Y_PRED, index_col=0, sep=',')
+    df_y_pred = df_y_pred.loc[df_y_true.index]
+    print(custom_metric_function(df_y_true, df_y_pred))
