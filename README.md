@@ -1,3 +1,3 @@
-Repository for a MVA class Project on Sparse Representation - Data Challenge.
+Repository for a MVA class Project "Rakuten Multi-modal Colour Extraction"
 
-A class given by Stephane Mallat at Collège de France (2021)
+Sparse Representation class given by Stephane Mallat at Collège de France (2021)
