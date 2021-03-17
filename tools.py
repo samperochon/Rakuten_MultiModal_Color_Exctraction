@@ -81,10 +81,11 @@ class StrongClassifier():
     def fit_svm(self):
         for idx,labelwise_svm in enumerate(self.strongsClass):
             labelwise_svm.fit(self.weaksPred[idx],Y)
-            predictions=
+            #predictions=
             #return a np.array of size [len_dataset,19]
             
-    def generate_strond_preds(self):
+    #def generate_strond_preds(self):
+        
         
         
         
@@ -128,9 +129,12 @@ class CustomBertModel(torch.nn.Module):
     
 class TextDataset(torch.utils.data.Dataset):
 
-    def __init__(self, XTrain, Ytrain_label):
+    def __init__(self, XTrain, Ytrain_label, item_caption):
         #Load pre-computed tensors
-        self.text_name = XTrain['item_name']
+        if item_caption:
+                self.text_name = XTrain['item_caption']
+        else:
+                self.text_name = XTrain['item_name']
         # self.text_caption = XTrain['item_caption']
         self.tokenizer = BertTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-v2')
         self.labels = Ytrain_label
@@ -139,7 +143,13 @@ class TextDataset(torch.utils.data.Dataset):
         return len(self.text_name)
 
     def __getitem__(self, idx):
-        tokenized_text_name    = self.tokenizer.tokenize(self.text_name.iloc[idx])
+        
+        if str(self.text_name[idx])=='nan':
+            tokenized_text_name=self.tokenizer.tokenize('何もない')
+        else:
+            tokenized_text_name    = self.tokenizer.tokenize(self.text_name.iloc[idx])
+        
+            #tokenized_text_name    = self.tokenizer.tokenize(self.text_name.iloc[idx])
     #    tokenized_text_caption = self.tokenizer.tokenize(str(self.text_caption[idx])) #sometimes there is no caption so str() is required
 
         indexed_tokens_name    = self.tokenizer.convert_tokens_to_ids(tokenized_text_name)
