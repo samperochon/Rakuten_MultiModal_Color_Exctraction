@@ -146,8 +146,10 @@ class TextDataset(torch.utils.data.Dataset):
         
         if str(self.text_name[idx])=='nan':
             tokenized_text_name=self.tokenizer.tokenize('何もない')
+        elif (self.tokenizer.tokenize(self.text_name[idx])==[]):
+            tokenized_text_name=self.tokenizer.tokenize('何もない')
         else:
-            tokenized_text_name    = self.tokenizer.tokenize(self.text_name.iloc[idx])
+            tokenized_text_name    = self.tokenizer.tokenize(self.text_name[idx])
         
             #tokenized_text_name    = self.tokenizer.tokenize(self.text_name.iloc[idx])
     #    tokenized_text_caption = self.tokenizer.tokenize(str(self.text_caption[idx])) #sometimes there is no caption so str() is required
