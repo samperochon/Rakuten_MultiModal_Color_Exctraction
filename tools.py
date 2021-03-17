@@ -129,7 +129,9 @@ class CustomBertModel(torch.nn.Module):
     
 class TextDataset(torch.utils.data.Dataset):
 
-    def __init__(self, XTrain, Ytrain_label, item_caption):
+    def __init__(self, XTrain, Ytrain_label, item_caption , troncature):
+        
+        self.troncature=troncature
         #Load pre-computed tensors
         if item_caption:
                 self.text_name = XTrain['item_caption']
@@ -160,7 +162,7 @@ class TextDataset(torch.utils.data.Dataset):
         tokens_tensor_name     = torch.tensor([indexed_tokens_name])
        # tokens_tensor_caption  = torch.tensor([indexed_tokens_caption])
 
-        tokens_tensor_name    = tokens_tensor_name[0,:512] #to prevent tokens sequence longer than 512 tokens
+        tokens_tensor_name    = tokens_tensor_name[0,:self.troncature] #to prevent tokens sequence longer than 512 tokens
       #  tokens_tensor_caption = tokens_tensor_caption[0,:412] #to prevent tokens sequence longer than 512 tokens
 
         #return  torch.cat((tokens_tensor_name,tokens_tensor_caption),0),self.labels[:,idx]
