@@ -190,10 +190,10 @@ class ImageTextDataset(torch.utils.data.Dataset):
         # Text data
         self.features=features
         
-        if model_type in ['DenseNet', 'vit']:
+        if model_type in ['DenseNet', 'vit', 'resnet']:
             # Transformations for the Densenet121 and ViT
             if augment and dataset_type=='training':
-                self.transformImage = transforms.Compose([#ImgAugTransform(),
+                self.transformImage = transforms.Compose([ImgAugTransform(),
                                                             #lambda x: Image.fromarray(x),
                                                             transforms.Resize((224,224)),
                                                             #transforms.CenterCrop(224),
@@ -210,35 +210,18 @@ class ImageTextDataset(torch.utils.data.Dataset):
                                                     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
             
             
-            
-        elif model_type=='resnet':
-            
-            if augment and dataset_type=='training':
-                self.transformImage = transforms.Compose([ImgAugTransform(),
-                                                            lambda x: Image.fromarray(x),
-                                                            transforms.Resize((224,224)),
-                                                            transforms.RandomHorizontalFlip(),
-                                                            transforms.RandomRotation(20, resample=Image.BILINEAR),
-                                                            transforms.ToTensor(),
-                                                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                                                 std=[0.229, 0.224, 0.225])])
-                
-                
-            else:
-                self.transformImage = transforms.Compose([transforms.Resize((224,224)),
-                                                            transforms.ToTensor(),
-                                                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                                                 std=[0.229, 0.224, 0.225])])
+         
 
 
         elif model_type=='inception':
             
             if augment and dataset_type=='training':
                 self.transformImage = transforms.Compose([ImgAugTransform(),
-                                                            lambda x: Image.fromarray(x),
-                                                            transforms.Resize(299),
+                                                           #lambda x: Image.fromarray(x),
+                                                            transforms.Resize((299,299)),
+                                                            #transforms.CenterCrop(224),
                                                             transforms.RandomHorizontalFlip(),
-                                                            transforms.RandomRotation(20, resample=Image.BILINEAR),
+                                                            #transforms.RandomRotation(20, resample=Image.BILINEAR),
                                                             transforms.ToTensor(),
                                                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                                  std=[0.229, 0.224, 0.225])])
