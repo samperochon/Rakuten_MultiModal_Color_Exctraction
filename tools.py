@@ -38,58 +38,6 @@ from sklearn import svm
 import numpy as np
 
 
-
-class StrongClassifier():
-    
-    def __init__(self,*argv):
-        super(StrongClassifier, self).__init__()
-        self.nbr_class=19
-
-        self.strongsClass = []    # Our nbr_class SVMs
-        self.weakClfs=[]          # Our weak classifier models
-        
-        self.weaksPredTrain=[]         # Their associated predictions on trainset (SAM)
-        self.truePredTrain=[]          #   True labels of the predictions on trainset (SAM) list of 19 arrays of size len_train_dataset
-        self.weaksPredVal=[]          # Their associated predictions on testset   (SAM)
-        
-        self.strongPred=[]        # Where we will store our true prediction of size 19*len_val_set (np.array)
-        
-        for _ in range(self.nbr_class):     #fill the strongsClass list with nbr_class different SVMs
-            self.strongsClass.append(svm.SVC())
-            
-        for arg in argv:                    #fill the weakClfs list with nbr_class different SVMs
-            self.weakClfs.append(arg)
-    
-    def generate_weaksPred(self):
-        '''
-        Generate the predictions of every weak classifier
-        
-        This direcrlty updates self.weaksPredTrain to be a list of 19 arrays of size [nbr_sample_trainset,_nbr_model]
-        This direcrlty updates self.weaksPredVal to be a list of 19 arrays of size [nbr_sample_val,_nbr_model]
-
-        Returns
-        -------
-        None
-
-        '''
-        for weak in self.weakClfs:
-            
-            print('generating')
-            
-
-    
-    def fit_svm(self):
-        for idx,labelwise_svm in enumerate(self.strongsClass):
-            labelwise_svm.fit(self.weaksPred[idx],Y)
-            #predictions=
-            #return a np.array of size [len_dataset,19]
-            
-    #def generate_strond_preds(self):
-        
-        
-        
-        
-        
         
 
 class CustomBertModel(torch.nn.Module):
@@ -129,9 +77,10 @@ class CustomBertModel(torch.nn.Module):
     
 class TextDataset(torch.utils.data.Dataset):
 
-    def __init__(self, XTrain, Ytrain_label, item_caption , troncature):
+    def __init__(self, XTrain, Ytrain_label, item_caption , troncature, test=False):
         
         self.troncature=troncature
+        self.test = test
         #Load pre-computed tensors
         if item_caption:
                 self.text_name = XTrain['item_caption']
@@ -139,7 +88,7 @@ class TextDataset(torch.utils.data.Dataset):
                 self.text_name = XTrain['item_name']
         # self.text_caption = XTrain['item_caption']
         self.tokenizer = BertTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-v2')
-        self.labels = Ytrain_label
+        self.labels = Ytrain_label if not test else None
         #torch.cat((Xtrain_item_name,Xtrain_item_caption),0)
     def __len__(self):
         return len(self.text_name)
@@ -166,7 +115,10 @@ class TextDataset(torch.utils.data.Dataset):
       #  tokens_tensor_caption = tokens_tensor_caption[0,:412] #to prevent tokens sequence longer than 512 tokens
 
         #return  torch.cat((tokens_tensor_name,tokens_tensor_caption),0),self.labels[:,idx]
-        return  tokens_tensor_name,self.labels[:,idx]
+        if not self.test:
+            return  tokens_tensor_name, self.labels[:,idx]
+        else:
+            return  tokens_tensor_name
 
 def generate_batch(data_batch):
     tokens_batch = [item[0] for item in data_batch]
@@ -175,6 +127,11 @@ def generate_batch(data_batch):
     labels_batch = pad_sequence(labels_batch,batch_first=True, padding_value=0) #just to have tensor instead of list
 
     return tokens_batch, labels_batch
+
+def generate_batch_Test(data_batch):
+    tokens_batch = [item[0] for item in data_batch]
+    tokens_batch = pad_sequence(tokens_batch,batch_first=True, padding_value=1)
+    return tokens_batch
 
 
 
@@ -198,7 +155,7 @@ class ImageTextDataset(torch.utils.data.Dataset):
             # Transformations for the Densenet121 and ViT
             if augment and dataset_type=='training':
                 self.transformImage = transforms.Compose([ImgAugTransform(),
-                                                            #lambda x: Image.fromarray(x),
+                                                           lambda x: Image.fromarray(x),
                                                             transforms.Resize((224,224)),
                                                             #transforms.CenterCrop(224),
                                                             transforms.RandomHorizontalFlip(),
@@ -221,7 +178,7 @@ class ImageTextDataset(torch.utils.data.Dataset):
             
             if augment and dataset_type=='training':
                 self.transformImage = transforms.Compose([ImgAugTransform(),
-                                                           #lambda x: Image.fromarray(x),
+                                                           lambda x: Image.fromarray(x),
                                                             transforms.Resize((299,299)),
                                                             #transforms.CenterCrop(224),
                                                             transforms.RandomHorizontalFlip(),
@@ -294,18 +251,15 @@ class ImageDataset(torch.utils.data.Dataset):
             # Transformations for the Densenet121 and ViT
             if augment and dataset_type=='training':
                 self.transformImage = transforms.Compose([ImgAugTransform(),
-                                                            #lambda x: Image.fromarray(x),
+                                                            lambda x: Image.fromarray(x),
                                                             transforms.Resize((224,224)),
-                                                            #transforms.CenterCrop(224),
                                                             transforms.RandomHorizontalFlip(),
-                                                            #transforms.RandomRotation(20, resample=Image.BILINEAR),
                                                             transforms.ToTensor(),
                                                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                                  std=[0.229, 0.224, 0.225])])
                 
             else:
                 self.transformImage = transforms.Compose([transforms.Resize((224,224)),
-                                                          #transforms.CenterCrop(224),
                                                           transforms.ToTensor(),
                                                           transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
             
@@ -318,9 +272,7 @@ class ImageDataset(torch.utils.data.Dataset):
                 self.transformImage = transforms.Compose([ImgAugTransform(),
                                                            lambda x: Image.fromarray(x),
                                                             transforms.Resize((299,299)),
-                                                            #transforms.CenterCrop(224),
                                                             transforms.RandomHorizontalFlip(),
-                                                            #transforms.RandomRotation(20, resample=Image.BILINEAR),
                                                             transforms.ToTensor(),
                                                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                                                  std=[0.229, 0.224, 0.225])])
@@ -394,7 +346,7 @@ class ImageDatasetTEST(torch.utils.data.Dataset):
 
         elif model_type=='inception':
             
-            self.transformImage = transforms.Compose([transforms.Resize(299),
+            self.transformImage = transforms.Compose([transforms.Resize((299,299)),
                                                       transforms.ToTensor(),
                                                       transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
