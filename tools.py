@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import ast
 from PIL import Image
 
-
 from glob import glob 
 import json
 import os
@@ -16,14 +15,17 @@ import torch
 import torch.nn as nn
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
+import torch.nn.functional as F
 import torch.optim
 import torch.utils.data
 import torchvision
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-
+from torch.nn.utils.rnn import pad_sequence
 
 from sklearn.metrics import f1_score
+
+from transformers import BertTokenizer, BertModel
 
 # For the ViT
 import timm
@@ -31,10 +33,142 @@ import timm
 from imgaug import augmenters as iaa
 
 
-# Create Data Loader
-class ImageDataset(torch.utils.data.Dataset):
 
-    def __init__(self, X_df, Y_df, data_path, dataset_type='training', augment=True, model_type='inception'):
+from sklearn import svm
+import numpy as np
+
+
+
+class StrongClassifier():
+    
+    def __init__(self,*argv):
+        super(StrongClassifier, self).__init__()
+        self.nbr_class=19
+
+        self.strongsClass = []    # Our nbr_class SVMs
+        self.weakClfs=[]          # Our weak classifier models
+        
+        self.weaksPredTrain=[]         # Their associated predictions on trainset (SAM)
+        self.truePredTrain=[]          #   True labels of the predictions on trainset (SAM) list of 19 arrays of size len_train_dataset
+        self.weaksPredVal=[]          # Their associated predictions on testset   (SAM)
+        
+        self.strongPred=[]        # Where we will store our true prediction of size 19*len_val_set (np.array)
+        
+        for _ in range(self.nbr_class):     #fill the strongsClass list with nbr_class different SVMs
+            self.strongsClass.append(svm.SVC())
+            
+        for arg in argv:                    #fill the weakClfs list with nbr_class different SVMs
+            self.weakClfs.append(arg)
+    
+    def generate_weaksPred(self):
+        '''
+        Generate the predictions of every weak classifier
+        
+        This direcrlty updates self.weaksPredTrain to be a list of 19 arrays of size [nbr_sample_trainset,_nbr_model]
+        This direcrlty updates self.weaksPredVal to be a list of 19 arrays of size [nbr_sample_val,_nbr_model]
+
+        Returns
+        -------
+        None
+
+        '''
+        for weak in self.weakClfs:
+            
+            print('generating')
+            
+
+    
+    def fit_svm(self):
+        for idx,labelwise_svm in enumerate(self.strongsClass):
+            labelwise_svm.fit(self.weaksPred[idx],Y)
+            predictions=
+            #return a np.array of size [len_dataset,19]
+            
+    def generate_strond_preds(self):
+        
+        
+        
+        
+        
+
+class CustomBertModel(torch.nn.Module):
+
+    def __init__(self):
+        super(CustomBertModel, self).__init__()
+
+        
+        self.encoder   =  BertModel.from_pretrained('cl-tohoku/bert-base-japanese-v2')
+        for param in self.encoder.parameters(): 
+                param.requires_grad = False
+        self.fc1 = torch.nn.Linear(768, 450)
+        self.fc2 = torch.nn.Linear(450, 200)
+        self.fc3 = torch.nn.Linear(200, 19)
+
+
+    def forward(self, tokens_tensor):
+        text_features  = self.encoder.forward(input_ids=tokens_tensor,return_dict=True)
+        text_features  = text_features['pooler_output'].squeeze(0)
+        text_features = F.relu(self.fc1(text_features))
+        text_features = F.relu(self.fc2(text_features))
+        logits = self.fc3(text_features)
+
+        return logits
+
+    def relaxation(self,type_relax):
+        if type_relax=="soft":
+            for name,param in self.named_parameters():
+                if name.startswith('encoder.encoder.layer.11') or name.startswith('encoder.pooler.dense'):
+                    param.requires_grad = True
+        elif type_relax=="hard":
+            for param in self.encoder.parameters(): 
+                param.requires_grad = True
+    
+    
+    
+    
+class TextDataset(torch.utils.data.Dataset):
+
+    def __init__(self, XTrain, Ytrain_label):
+        #Load pre-computed tensors
+        self.text_name = XTrain['item_name']
+        # self.text_caption = XTrain['item_caption']
+        self.tokenizer = BertTokenizer.from_pretrained('cl-tohoku/bert-base-japanese-v2')
+        self.labels = Ytrain_label
+        #torch.cat((Xtrain_item_name,Xtrain_item_caption),0)
+    def __len__(self):
+        return len(self.text_name)
+
+    def __getitem__(self, idx):
+        tokenized_text_name    = self.tokenizer.tokenize(self.text_name.iloc[idx])
+    #    tokenized_text_caption = self.tokenizer.tokenize(str(self.text_caption[idx])) #sometimes there is no caption so str() is required
+
+        indexed_tokens_name    = self.tokenizer.convert_tokens_to_ids(tokenized_text_name)
+      #  indexed_tokens_caption = self.tokenizer.convert_tokens_to_ids(tokenized_text_caption)
+        
+        tokens_tensor_name     = torch.tensor([indexed_tokens_name])
+       # tokens_tensor_caption  = torch.tensor([indexed_tokens_caption])
+
+        tokens_tensor_name    = tokens_tensor_name[0,:100] #to prevent tokens sequence longer than 512 tokens
+      #  tokens_tensor_caption = tokens_tensor_caption[0,:412] #to prevent tokens sequence longer than 512 tokens
+
+        #return  torch.cat((tokens_tensor_name,tokens_tensor_caption),0),self.labels[:,idx]
+        return  tokens_tensor_name,self.labels[:,idx]
+
+def generate_batch(data_batch):
+    tokens_batch = [item[0] for item in data_batch]
+    labels_batch = [item[1] for item in data_batch]
+    tokens_batch = pad_sequence(tokens_batch,batch_first=True, padding_value=1)
+    labels_batch = pad_sequence(labels_batch,batch_first=True, padding_value=0) #just to have tensor instead of list
+
+    return tokens_batch, labels_batch
+
+
+
+
+# Create Data Loader
+class ImageTextDataset(torch.utils.data.Dataset):
+
+    def __init__(self, X_df, Y_df, features, data_path, dataset_type='training', augment=True, model_type='inception'):
         
         # Datapath to retrieve each image tensor in the __getitem__ method
         self.data_path = data_path
@@ -42,6 +176,9 @@ class ImageDataset(torch.utils.data.Dataset):
         # DataFrame 
         self.X_df = X_df
         self.Y_df = Y_df
+        
+        # Text data
+        self.features=features
         
         if model_type in ['DenseNet', 'vit']:
             # Transformations for the Densenet121 and ViT
@@ -114,7 +251,121 @@ class ImageDataset(torch.utils.data.Dataset):
         return im
         
     def __len__(self):
-        return len(self.X_df)-1
+        return len(self.X_df)
+
+    def __getitem__(self, index):
+        
+        try:
+            # Load data point
+            imPath = os.path.join('/content','images',self.X_df.iloc[index]["image_file_name"])
+            image = self.loadImage(imPath)
+            image = self.transformImage(image)
+          
+            #Load target
+            colorTag = self.Y_df.iloc[index]["color_tags_num"]
+        except RuntimeError:
+            print('Error leading: {}'.format(imPath))
+            index+=1
+            # Load data point
+            imPath = os.path.join('/content','images',self.X_df.iloc[index]["image_file_name"])
+            image = self.loadImage(imPath)
+            image = self.transformImage(image)
+
+            #Load target
+            colorTag = self.Y_df.iloc[index]["color_tags_num"]
+        
+        # Image, text features, labels 
+        return  image, torch.tensor(colorTag), self.features[:,index]
+    
+    
+    
+
+
+# Create Data Loader
+class ImageDataset(torch.utils.data.Dataset):
+
+    def __init__(self, X_df, Y_df, data_path, dataset_type='training', augment=True, model_type='inception', use_text=False):
+        
+        # Datapath to retrieve each image tensor in the __getitem__ method
+        self.data_path = data_path
+        
+        # DataFrame 
+        self.X_df = X_df
+        self.Y_df = Y_df
+        
+        if model_type in ['DenseNet', 'vit']:
+            # Transformations for the Densenet121 and ViT
+            if augment and dataset_type=='training':
+                self.transformImage = transforms.Compose([#ImgAugTransform(),
+                                                            #lambda x: Image.fromarray(x),
+                                                            transforms.RandomResizedCrop(224, scale=(0.8, 1.2), ratio=(0.85, 1.15)),
+                                                            transforms.RandomPerspective(distortion_scale=0.3, p=0.3, interpolation=2, fill=0),
+                                                            #transforms.CenterCrop(224),
+                                                            transforms.RandomHorizontalFlip(0.5),
+                                                            #transforms.RandomRotation(20, resample=Image.BILINEAR),
+                                                            transforms.ToTensor(),
+                                                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                                 std=[0.229, 0.224, 0.225])])
+                
+            else:
+                self.transformImage = transforms.Compose([transforms.Resize((224,224)),
+                                                          #transforms.CenterCrop(224),
+                                                          transforms.ToTensor(),
+                                                          transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+            
+            
+            
+        elif model_type=='resnet':
+            
+            if augment and dataset_type=='training':
+                self.transformImage = transforms.Compose([ImgAugTransform(),
+                                                            lambda x: Image.fromarray(x),
+                                                            transforms.Resize((224,224)),
+                                                            transforms.RandomHorizontalFlip(),
+                                                            transforms.RandomRotation(20, resample=Image.BILINEAR),
+                                                            transforms.ToTensor(),
+                                                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                                 std=[0.229, 0.224, 0.225])])
+                
+                
+            else:
+                self.transformImage = transforms.Compose([transforms.Resize((224,224)),
+                                                            transforms.ToTensor(),
+                                                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                                 std=[0.229, 0.224, 0.225])])
+
+
+        elif model_type=='inception':
+            
+            if augment and dataset_type=='training':
+                self.transformImage = transforms.Compose([ImgAugTransform(),
+                                                            lambda x: Image.fromarray(x),
+                                                            transforms.Resize(299),
+                                                            transforms.RandomHorizontalFlip(),
+                                                            transforms.RandomRotation(20, resample=Image.BILINEAR),
+                                                            transforms.ToTensor(),
+                                                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                                 std=[0.229, 0.224, 0.225])])
+                
+            else:
+                self.transformImage = transforms.Compose([transforms.Resize(299),
+                                                             transforms.CenterCrop(299),
+                                                             transforms.ToTensor(),
+                                                             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+
+            
+
+    def loadImage(self, path):
+        try:
+            im = Image.open(path).convert('RGB')
+        except OSError:
+            raise RuntimeError('Could not read image: ' + path)
+            #im = Image.new("RGB", self.imSize, "white")
+
+        return im
+        
+    def __len__(self):
+        return len(self.X_df)
 
     def __getitem__(self, index):
         
@@ -150,10 +401,9 @@ class ImageDatasetTEST(torch.utils.data.Dataset):
         
         if model_type in ['DenseNet', 'vit']:
             # Transformations for the Densenet121 and ViT
-            self.transformImage = transforms.Compose([transforms.Resize(256),
-                                                    transforms.CenterCrop(224),
-                                                    transforms.ToTensor(),
-                                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+            self.transformImage = transforms.Compose([transforms.Resize((224,224)),
+                                                      transforms.ToTensor(),
+                                                      transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
             
             
             
@@ -168,9 +418,8 @@ class ImageDatasetTEST(torch.utils.data.Dataset):
         elif model_type=='inception':
             
             self.transformImage = transforms.Compose([transforms.Resize(299),
-                                                             transforms.CenterCrop(299),
-                                                             transforms.ToTensor(),
-                                                             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+                                                      transforms.ToTensor(),
+                                                      transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
             
 
@@ -184,7 +433,7 @@ class ImageDatasetTEST(torch.utils.data.Dataset):
         return im
         
     def __len__(self):
-        return len(self.X_df)-1
+        return len(self.X_df)
 
     def __getitem__(self, index):
         
@@ -204,21 +453,9 @@ class ImageDatasetTEST(torch.utils.data.Dataset):
 
         return  image
     
+ 
     
-class TextDataset(torch.utils.data.Dataset):
-
-    def __init__(self,features,labels):
-      #Load pre-computed tensors
-      self.features=features
-      self.labels=labels
-        
-    def __len__(self):
-        return self.features.shape[1]
-
-    def __getitem__(self, idx):
-
-        return  self.features[:,idx],self.labels[:,idx]
-        
+   
 
 
 class ImgAugTransform:
