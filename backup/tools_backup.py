@@ -24,7 +24,6 @@ import torchvision.datasets as datasets
 from torch.nn.utils.rnn import pad_sequence
 
 from sklearn.metrics import f1_score
-from sklearn import svm
 
 from transformers import BertTokenizer, BertModel
 
@@ -53,15 +52,13 @@ class CustomBertModel(torch.nn.Module):
         self.fc1 = torch.nn.Linear(768, 450)
         self.fc2 = torch.nn.Linear(450, 200)
         self.fc3 = torch.nn.Linear(200, 19)
-        self.batchNorm = nn.BatchNorm1d(num_features=450)
-        self.dropout = nn.Dropout(0.15)
 
 
     def forward(self, tokens_tensor):
         text_features  = self.encoder.forward(input_ids=tokens_tensor,return_dict=True)
         text_features  = text_features['pooler_output'].squeeze(0)
-        text_features = F.relu(self.dropout(self.batchNorm(self.fc1(text_features))))
-        text_features = F.relu(self.dropout(self.fc2(text_features)))
+        text_features = F.relu(self.fc1(text_features))
+        text_features = F.relu(self.fc2(text_features))
         logits = self.fc3(text_features)
 
         return logits
@@ -494,7 +491,8 @@ def generateNumericalLabelsDataset(root_data, path_to_save='./YTrain.csv'):
     return YTrain
 
 
-def displayPredictions(model,root_data, n=None):
+
+def displayPredictions(model, n=None):
     '''
         From a model, show n examples with prediction and label.
         Ex: 
@@ -505,28 +503,34 @@ def displayPredictions(model,root_data, n=None):
         model.classifier = nn.Linear(1024, 19) 
         displayPredictions(model, n=4)
     '''
-    XTrain = pd.read_csv(os.path.join(root_data,'X_train_12tkObq.csv'), index_col=0)
-
+    
     randomImages = np.random.choice(np.arange(len(XTrain)), size=n, replace = False)
 
-    transformation = transforms.Compose([transforms.Resize((224,224)),
+    transformation = transforms.Compose([transforms.Resize(256),
+                                    transforms.CenterCrop(224),
                                     transforms.ToTensor(),
                                     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
     # Encode the multiclass color labels using one hot encoding (Vector of 19 zeros with 1 when the color is present)
     idx2color={ 0: "Beige",1:"Black",2:"Blue",3:"Brown",4:"Burgundy",5:"Gold",6:"Green",7:"Grey",
                  8:"Khaki",9:"Multiple Colors",10:"Navy",11:"Orange",12:"Pink",
                  13:"Purple",14:"Red",15:"Silver",16:"Transparent",17:"White",18:"Yellow"}
+    if n is None:
+        n=image.shape[0]
+    
+    assert n <= image.shape[0]
     
     fig = plt.figure(figsize=(40,10*(n//2)))
     axes = []
     j=0
     for i in range(n):
         axes.append(fig.add_subplot(n//2,2,j+1))
-        path = os.path.join('/content/images',XTrain.iloc[randomImages[i]]["image_file_name"])
+        path = os.path.join(root_data,'images',XTrain.iloc[randomImages[i]]["image_file_name"])
         image_raw = Image.open(path).convert('RGB')
         image_tranformed = transformation(image_raw)
-        pred = model(image_tranformed[None,:,:,:].cuda())
+        pred = model(image_tranformed[None,:,:,:])
         pred = (torch.sigmoid(pred).detach().numpy()>.5).astype(int)
+        
+        
         axes[j].imshow(image_raw)
         labels_pred = [idx2color[idx] for idx in np.where(pred[0]==1)[0] if len(np.where(pred[0]==1)[0])>0]
         
