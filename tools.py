@@ -101,7 +101,8 @@ class CustomBertModel(torch.nn.Module):
         self.fc1 = torch.nn.Linear(768, 450)
         self.fc2 = torch.nn.Linear(450, 200)
         self.fc3 = torch.nn.Linear(200, 19)
-        self.batchNorm = nn.BatchNorm1d(num_features=450)
+        if self.batchnorm:
+            self.batchNorm = nn.BatchNorm1d(num_features=450)
         self.dropout = nn.Dropout(0.15)
 
 
@@ -504,3 +505,70 @@ def displayPredictions(model,root_data, n=None):
         j+=1
     plt.tight_layout()
     return
+
+def lookExperiments(model_type='vit', experiment_num = None):
+
+    param_dict = ['model_type', 'augment', 'batch_size', 'best_f1', 'betas', 'criterion', 'dropout', 'epochs', 'head_model', 'item_caption', 'lr', 'lr_decay_epoch', 'pos_weight', 'relaxation_type', 'split_train_val', 'troncature', 'use_text', 'weight_decay']
+
+
+    if experiment_num is None:
+        vit_exp_list = glob(os.path.join(ROOT_DATA, 'experiments',model_type,'*'))
+    else:
+        vit_exp_list = [os.path.join(ROOT_DATA, 'experiments',model_type,str(experiment_num))]
+    print(vit_exp_list)
+    for path in vit_exp_list:
+        print(path)
+        exp_num = os.path.basename(path)
+        if exp_num=='0':
+            continue
+        path_json = os.path.join(path, 'experiment_log.json')
+
+        print('\nLOOKING AT EXPERIMENT : {}'.format(exp_num))
+        #try
+        with open(path_json, 'r') as json_file:
+
+            data = json.load(json_file)
+                
+            if 'losses_train_epoch' not in data.keys():
+              print("Don't have loss for exp num: {}".format(exp_num))
+              continue
+
+            text=""
+            count=0
+            for param in param_dict:
+              if param in data.keys():
+                text+=param+': {} | '.format(data[param])
+                count+=1
+              if count%5==0:
+                text+='\n'
+            n_epoch = len(data['losses_train_epoch'])
+
+            plt.figure(figsize=(12,5))
+            plt.plot(data['losses_train_batch'], color = 'b', alpha = 0.5, label = 'Training loss (batch)')
+            plt.scatter(int(len(data['losses_train_batch'])/n_epoch)*np.arange(n_epoch), data['losses_val_epoch'], s=50, color = 'r', label = 'Validation loss (epoch)')
+            plt.scatter(int(len(data['losses_train_batch'])/n_epoch)*np.arange(n_epoch), data['losses_train_epoch'], s=50, color = 'g', label = 'Training loss (epoch)')
+            plt.plot(int(len(data['losses_train_batch'])/n_epoch)*np.arange(n_epoch), data['losses_train_epoch'], color = 'g')
+            plt.title('Evolution of the losses during training - Experiment : {}\n'.format(os.path.basename(path))+text, fontsize=17, weight='bold')
+            plt.xlabel('Epochs', fontsize=18, weight='bold')
+            plt.ylabel('Loss evolution', fontsize=18, weight='bold')
+            plt.xticks(ticks = int(len(data['losses_train_batch'])/n_epoch)*np.arange(n_epoch), labels=[str(i) for i in np.arange(1,n_epoch+1)])
+            _ = plt.legend()
+            plt.show()
+
+            plt.figure(figsize=(12,5))
+            plt.plot(data['f1_train_batch'], color = 'b', alpha = 0.5, label = 'Training loss (batch)')
+            plt.scatter(int(len(data['f1_train_batch'])/n_epoch)*np.arange(n_epoch), data['f1_val_epoch'], s=50, color = 'r', label = 'Validation F1-Score (epoch)')
+            plt.scatter(int(len(data['f1_train_batch'])/n_epoch)*np.arange(n_epoch), data['f1_train_epoch'], s=50, color = 'g', label = 'Training F1-Score (epoch)')
+            plt.plot(int(len(data['f1_train_batch'])/n_epoch)*np.arange(n_epoch), data['f1_train_epoch'], color = 'g')
+            plt.title('Evolution of the F1 score during training - Experiment : {}\n'.format(os.path.basename(path))+text, fontsize=17, weight='bold')
+            plt.xlabel('Epochs', fontsize=18, weight='bold')
+            plt.ylabel('F1 evolution', fontsize=18, weight='bold')
+            plt.xticks(ticks = int(len(data['losses_train_batch'])/n_epoch)*np.arange(n_epoch), labels=[str(i) for i in np.arange(1,n_epoch+1)])
+            _ = plt.legend()
+            plt.ylim((0,1))
+            plt.show()
+
+
+            print('Number of epoch: {}'.format(n_epoch))
+        #except KeyError:
+            #print(path)
