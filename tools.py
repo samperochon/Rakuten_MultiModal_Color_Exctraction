@@ -39,7 +39,54 @@ from sklearn import svm
 import numpy as np
 
 
-        
+class MixModel(torch.nn.Module):
+
+    def init(self, relaxation_type):
+        super(CustomModel, self).init()
+        self.relaxation_type = relaxation_type
+
+        self.Bert   =  BertModel.from_pretrained('cl-tohoku/bert-base-japanese-v2')
+        self.ViT    =  timm.create_model('vit_large_patch16_224', pretrained=True)
+        self.ViT.model.head = nn.Identity()
+        for param in self.Bert.parameters(): 
+                param.requires_grad = False
+        for param in self.ViT.parameters(): 
+                param.requires_grad = False
+
+        self.fc1 = torch.nn.Linear(1792, 700)
+        self.fc2 = torch.nn.Linear(700, 200)
+        self.fc3 = torch.nn.Linear(200, 19)
+        self.BN =  nn.BatchNorm1d(num_features=700)
+        self.dropout = nn.Dropout(self.dropout)
+
+
+    def forward(self, tokens_tensor , image ):
+        text_features  = self.encoder.forward(input_ids=tokens_tensor,return_dict=True)
+        text_features  = text_features['pooler_output'].squeeze(0)
+
+        image_features = self.model.forward(image)
+
+        features = torch.cat((text_features,image_features),1)
+
+        features = F.relu(self.fc1(features))
+        features = nn.Dropout(F.relu(self.BN(self.fc2(features))))
+        logits   = self.fc3(features)
+
+        return logits
+
+    def relaxation(self):
+        if self.relaxation_type=="soft":
+            for name,param in self.Bert.named_parameters():
+                if name.startswith('encoder.encoder.layer.11') or name.startswith('encoder.pooler.dense'):
+                    param.requires_grad = True
+            for name,param in self.ViT.named_parameters():
+                if name.startswith('model.blocks.20') or name.startswith('model.blocks.21') or name.startswith('model.blocks.22') or name.startswith('model.blocks.23') :
+                    param.requires_grad = True
+
+        elif self.relaxation_type=="hard":
+            for param in self.encoder.parameters(): 
+                param.requires_grad = True
+                
 
 class CustomBertModel(torch.nn.Module):
 
@@ -62,7 +109,7 @@ class CustomBertModel(torch.nn.Module):
         text_features  = self.encoder.forward(input_ids=tokens_tensor,return_dict=True)
         text_features  = text_features['pooler_output'].squeeze(0)
         if self.batchnorm:
-            text_features = F.relu(self.dropout(self.batchNorm(self.fc1(text_features))))
+            text_features = self.dropout(F.relu(self.batchNorm(self.fc1(text_features))))
         else:
             text_features = F.relu(self.dropout(self.fc1(text_features)))
         text_features = F.relu(self.dropout(self.fc2(text_features)))
@@ -102,12 +149,12 @@ class TextDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         
-        if str(self.text_name[idx])=='nan':
+        if str(self.text_name.iloc[idx])=='nan':
             tokenized_text_name=self.tokenizer.tokenize('何もない')
-        elif (self.tokenizer.tokenize(self.text_name[idx])==[]):
+        elif (self.tokenizer.tokenize(self.text_name.iloc[idx])==[]):
             tokenized_text_name=self.tokenizer.tokenize('何もない')
         else:
-            tokenized_text_name    = self.tokenizer.tokenize(self.text_name[idx])
+            tokenized_text_name    = self.tokenizer.tokenize(self.text_name.iloc[idx])
         
             #tokenized_text_name    = self.tokenizer.tokenize(self.text_name.iloc[idx])
     #    tokenized_text_caption = self.tokenizer.tokenize(str(self.text_caption[idx])) #sometimes there is no caption so str() is required
@@ -140,107 +187,23 @@ def generate_batch_Test(data_batch):
     tokens_batch = pad_sequence(tokens_batch,batch_first=True, padding_value=1)
     return tokens_batch
 
-
-
-
-# Create Data Loader
-class ImageTextDataset(torch.utils.data.Dataset):
-
-    def __init__(self, X_df, Y_df, features, data_path, dataset_type='training', augment=True, model_type='inception'):
+class MixedDataset(torch.utils.data.Dataset):
+    
+    def __init__(self, XTrain, Ytrain_label, item_caption , troncature, test=False,  X_df=None, Y_df=None, data_path=None, dataset_type='training', augment=True, model_type='inception', use_text=False):
         
-        # Datapath to retrieve each image tensor in the __getitem__ method
-        self.data_path = data_path
+        self.imageDataset = ImageDataset(X_df, Y_df, data_path, dataset_type=dataset_type, augment=augment, model_type=model_type, use_text=use_text)
+        self.textDataset = TextDataset(XTrain, Ytrain_label, item_caption , troncature, test=test)
         
-        # DataFrame 
-        self.X_df = X_df
-        self.Y_df = Y_df
-        
-        # Text data
-        self.features=features
-        
-        if model_type in ['DenseNet', 'vit', 'resnet']:
-            # Transformations for the Densenet121 and ViT
-            if augment and dataset_type=='training':
-                self.transformImage = transforms.Compose([ImgAugTransform(),
-                                                           lambda x: Image.fromarray(x),
-                                                            transforms.Resize((224,224)),
-                                                            #transforms.CenterCrop(224),
-                                                            transforms.RandomHorizontalFlip(),
-                                                            #transforms.RandomRotation(20, resample=Image.BILINEAR),
-                                                            transforms.ToTensor(),
-                                                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                                                 std=[0.229, 0.224, 0.225])])
-                
-            else:
-                self.transformImage = transforms.Compose([transforms.Resize((224,224)),
-                                                    #transforms.CenterCrop(224),
-                                                    transforms.ToTensor(),
-                                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-            
-            
-         
-
-
-        elif model_type=='inception':
-            
-            if augment and dataset_type=='training':
-                self.transformImage = transforms.Compose([ImgAugTransform(),
-                                                           lambda x: Image.fromarray(x),
-                                                            transforms.Resize((299,299)),
-                                                            #transforms.CenterCrop(224),
-                                                            transforms.RandomHorizontalFlip(),
-                                                            #transforms.RandomRotation(20, resample=Image.BILINEAR),
-                                                            transforms.ToTensor(),
-                                                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                                                 std=[0.229, 0.224, 0.225])])
-                
-            else:
-                self.transformImage = transforms.Compose([transforms.Resize(299),
-                                                             transforms.CenterCrop(299),
-                                                             transforms.ToTensor(),
-                                                             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-
-            
-
-    def loadImage(self, path):
-        try:
-            im = Image.open(path).convert('RGB')
-        except OSError:
-            raise RuntimeError('Could not read image: ' + path)
-            #im = Image.new("RGB", self.imSize, "white")
-
-        return im
         
     def __len__(self):
-        return len(self.X_df)
-
+        return len(self.textDataset)
+    
     def __getitem__(self, index):
         
-        try:
-            # Load data point
-            imPath = os.path.join('/content','images',self.X_df.iloc[index]["image_file_name"])
-            image = self.loadImage(imPath)
-            image = self.transformImage(image)
-          
-            #Load target
-            colorTag = self.Y_df.iloc[index]["color_tags_num"]
-        except RuntimeError:
-            print('Error leading: {}'.format(imPath))
-            index+=1
-            # Load data point
-            imPath = os.path.join('/content','images',self.X_df.iloc[index]["image_file_name"])
-            image = self.loadImage(imPath)
-            image = self.transformImage(image)
-
-            #Load target
-            colorTag = self.Y_df.iloc[index]["color_tags_num"]
+        image, label = self.imageDataset[index]
+        text, _ = self.textDataset[index]
         
-        # Image, text features, labels 
-        return  image, torch.tensor(colorTag), self.features[:,index]
-    
-    
-    
-
+        return(text, image, label)
 
 # Create Data Loader
 class ImageDataset(torch.utils.data.Dataset):
